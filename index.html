@@ -209,6 +209,7 @@ textarea.fi{resize:vertical;min-height:64px}
       <button data-action="go" data-view="fila"><span class="ic">📋</span>Fila por setor</button>
       <button data-action="go" data-view="jobs"><span class="ic">🧭</span>Jobs</button>
       <button data-action="go" data-view="lista"><span class="ic">🗂️</span>Todas as OS</button>
+      <button data-action="go" data-view="apont"><span class="ic">🔨</span>Apontamentos</button>
       <div class="nav-sec">Próximos módulos</div>
       <button class="off"><span class="ic">📄</span>Orçamentos<span class="f1">F1</span></button>
       <button class="off"><span class="ic">💰</span>Financeiro<span class="f1">F1</span></button>
@@ -276,7 +277,7 @@ var ETAPAS_OBS_OBRIG=['Concluído','Acabamento/Pintura','Acabamento'];
 var FINAIS=['Concluído','Recebido'];
 
 /* ═══════════ ESTADO ═══════════ */
-var osList=[], histRecente=[], orcAtivos=[];
+var osList=[], histRecente=[], orcAtivos=[], apontList=[];
 var view='painel', viewArg=null;
 var osEd=null, formDisc='ROUTER', printBase64='';
 var tramId=null, tramSt=null;
@@ -415,8 +416,9 @@ async function load(){
     var pOS=sbGet('ordens_servico?deletado_em=is.null&order=created_at.desc&select=*');
     var pHist=sbGet('os_historico?order=created_at.desc&limit=14&select=*');
     var pOrc=sbGet('orcamentos?select=numero,cliente,projeto,status&order=numero.desc');
-    var res=await Promise.all([pOS,pHist.catch(function(){return [];}),pOrc.catch(function(){return [];})]);
-    osList=res[0]; histRecente=res[1]; orcAtivos=res[2];
+    var pAp=sbGet('apontamentos_producao?select=*&order=criado_em.desc');
+    var res=await Promise.all([pOS,pHist.catch(function(){return [];}),pOrc.catch(function(){return [];}),pAp.catch(function(){return [];})]);
+    osList=res[0]; histRecente=res[1]; orcAtivos=res[2]; apontList=res[3];
     render();
   }catch(e){
     document.getElementById('content').innerHTML='<div class="card"><p class="mini" style="color:var(--danger)">Erro ao carregar: '+esc(e.message)+'</p></div>';
@@ -439,6 +441,7 @@ function render(){
   else if(view==='jobs')c.innerHTML=vJobs();
   else if(view==='job')c.innerHTML=vJob(viewArg);
   else if(view==='lista')c.innerHTML=vLista();
+  else if(view==='apont')c.innerHTML=vApont();
   else if(view==='form')c.innerHTML=vForm();
 }
 
@@ -647,6 +650,116 @@ function vLista(){
   }
   h+='</tbody></table></div>';
   return h;
+}
+
+/* ═══════════ VIEW: APONTAMENTOS ═══════════ */
+var AP_URL=location.origin+location.pathname.replace(/index\.html$/,'').replace(/[^\/]*$/,'')+'apontador.html';
+function vApont(){
+  var ativos=apontList.filter(function(a){return a.status!=='encerrado';});
+  var enc=apontList.filter(function(a){return a.status==='encerrado';});
+  var h='<div class="pg-head"><h2>Apontamentos de produção</h2><p>Gere um link por disciplina para a equipe apontar escopo, insumos e mão de obra direto do celular no galpão.</p></div>';
+  h+='<div class="kpis">';
+  h+='<div class="kpi"><div class="lb">Ativos</div><div class="vl">'+ativos.length+'</div></div>';
+  h+='<div class="kpi"><div class="lb">Total</div><div class="vl">'+apontList.length+'</div></div>';
+  h+='<div class="kpi"><div class="lb">Encerrados</div><div class="vl">'+enc.length+'</div></div>';
+  h+='</div>';
+
+  h+='<div class="card"><h3>➕ Criar apontamento</h3>';
+  h+='<div class="fg fg2">';
+  h+='<div class="ff"><label>Job (SS)</label><select class="fi" id="ap-job"><option value="">— selecione —</option>';
+  orcAtivos.forEach(function(o){h+='<option value="'+esc(o.numero)+'" data-nome="'+esc((o.cliente||'')+(o.projeto?' · '+o.projeto:''))+'">'+esc(o.numero)+(o.cliente?' — '+esc(o.cliente):'')+'</option>';});
+  h+='</select></div>';
+  h+='<div class="ff"><label>Disciplina</label><select class="fi" id="ap-disc">';
+  Object.keys(DISCS).forEach(function(k){h+='<option value="'+k+'">'+esc(DISCS[k].l)+'</option>';});
+  h+='<option value="MO">Mão de Obra</option><option value="LOG">Logística</option>';
+  h+='</select></div></div>';
+  h+='<div class="fg fg2"><div class="ff"><label>Responsável</label><input class="fi" id="ap-resp" list="resp-list-ap"><datalist id="resp-list-ap">';
+  RESP.forEach(function(r){h+='<option value="'+esc(r)+'">';});
+  h+='</datalist></div><div class="ff" style="display:flex;align-items:flex-end"><button class="btn btn-p" style="width:100%" data-action="ap-criar">Gerar link</button></div></div>';
+  h+='<div id="ap-link-box" style="display:none;background:var(--accent-soft);border-radius:8px;padding:12px;margin-top:6px"><div class="mini" style="margin-bottom:6px;color:var(--accent);font-weight:700">✓ Link gerado — envie para o profissional:</div><div class="mono" id="ap-link-url" style="font-size:12px;word-break:break-all;margin-bottom:8px"></div><button class="btn btn-g btn-sm" data-action="ap-copiar">📋 Copiar link</button></div>';
+  h+='</div>';
+
+  if(ativos.length){
+    h+='<div class="sec-hdr"><h3>Ativos</h3><span class="cnt">'+ativos.length+'</span></div>';
+    h+='<div class="card" style="padding:8px 14px"><table><thead><tr><th>Job</th><th>Disciplina</th><th class="hide-m">Resp.</th><th class="num">Link</th><th class="num">Ações</th></tr></thead><tbody>';
+    ativos.forEach(function(a){
+      h+='<tr><td><b>'+esc(a.job_numero||'')+'</b><div class="mini">'+esc(a.job_nome||'')+'</div></td>';
+      h+='<td>'+esc(a.disciplina||'')+'</td>';
+      h+='<td class="hide-m mini">'+esc(a.responsavel||'—')+'</td>';
+      h+='<td class="num"><button class="btn btn-g btn-sm" data-action="ap-link" data-tok="'+esc(a.token||'')+'">🔗 Abrir</button></td>';
+      h+='<td class="num" style="white-space:nowrap"><button class="btn btn-g btn-sm" data-action="ap-consolidar" data-id="'+a.id+'" data-job="'+esc(a.job_numero||'')+'" data-disc="'+esc(a.disciplina||'')+'"'+(a.consolidado_em?' disabled title="já consolidado"':'')+'>'+(a.consolidado_em?'✓ Consolidado':'💰 Consolidar')+'</button> <button class="btn btn-g btn-sm" style="color:var(--danger)" data-action="ap-encerrar" data-id="'+a.id+'">Encerrar</button></td></tr>';
+    });
+    h+='</tbody></table></div>';
+  }
+  if(enc.length){
+    h+='<div class="sec-hdr"><h3>Encerrados</h3><span class="cnt">'+enc.length+'</span></div>';
+    h+='<div class="card" style="padding:8px 14px"><table><tbody>';
+    enc.forEach(function(a){
+      h+='<tr><td><b>'+esc(a.job_numero||'')+'</b> <span class="mini">'+esc(a.disciplina||'')+'</span></td><td class="num">'+(a.consolidado_em?'<span class="tag t-pago">consolidado</span>':'<span class="tag t-mut">não consolidado</span>')+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+  }
+  return h;
+}
+async function criarApontamento(){
+  var sel=document.getElementById('ap-job');
+  var job=sel.value.trim();
+  if(!job){toast('Selecione o job.','err');return;}
+  var nome=sel.options[sel.selectedIndex]?sel.options[sel.selectedIndex].dataset.nome||'':'';
+  var discCod=document.getElementById('ap-disc').value;
+  var disc=(DISCS[discCod]||{}).l||(discCod==='MO'?'Mão de Obra':discCod==='LOG'?'Logística':discCod);
+  var resp=document.getElementById('ap-resp').value.trim();
+  try{
+    var r=await sbPost('apontamentos_producao',{job_numero:job,job_nome:nome,disciplina:disc,disciplina_codigo:discCod,responsavel:resp,status:'ativo'});
+    var novo=Array.isArray(r)?r[0]:r;
+    var link=AP_URL+'?token='+novo.token;
+    document.getElementById('ap-link-url').textContent=link;
+    document.getElementById('ap-link-box').style.display='block';
+    window._apLink=link;
+    toast('Apontamento criado!','ok');
+    await load();go('apont');
+    document.getElementById('ap-link-url').textContent=link;
+    document.getElementById('ap-link-box').style.display='block';
+  }catch(e){toast('Erro: '+e.message,'err');}
+}
+async function encerrarApontamento(id){
+  if(!confirm('Encerrar este apontamento? O link do profissional será desativado.'))return;
+  try{await sbPatch('apontamentos_producao',id,{status:'encerrado',encerrado_em:new Date().toISOString()});toast('Encerrado.','ok');await load();go('apont');}
+  catch(e){toast('Erro: '+e.message,'err');}
+}
+async function consolidarApontamento(id,jobNumero,discNome){
+  var ap=apontList.find(function(a){return String(a.id)===String(id);});
+  if(ap&&ap.consolidado_em){toast('Já consolidado — não pode repetir.','err');return;}
+  if(!confirm('Consolidar lançamentos de '+discNome+' no job '+jobNumero+'?\n\nSerão copiados para os lançamentos do sistema. Ação única por apontamento.'))return;
+  try{
+    var lancs=await sbGet('lancamentos_apontamento?apontamento_id=eq.'+id+'&select=*');
+    if(!lancs||!lancs.length){toast('Nenhum insumo lançado para consolidar.','err');return;}
+    var payload=lancs.map(function(l){
+      return {
+        orcamento_numero:jobNumero,
+        categoria:l.categoria||'Material',
+        descricao:'['+discNome+'] '+(l.insumo_nome||l.descricao||'—'),
+        valor:l.custo_total||0,
+        data:l.data||hoje(),
+        fornecedor:l.fornecedor||'',
+        tem_nota:l.tem_nota!==false,
+        comprovante:l.comprovante||null,
+        periodicidade:'unica',
+        tipo_lancamento:'saida',
+        diarias:(l.categoria==='Mão de Obra')?(l.quantidade||null):null,
+        valor_diaria:(l.categoria==='Mão de Obra')?(l.custo_unit||null):null,
+        horas_extras:l.horas_extras||null,
+        tipo_mo:l.tipo_mo||null,
+        local_mo:l.local_mo||null,
+        origem:'consolidacao',
+        apontamento_id:id
+      };
+    });
+    await sbPost('lancamentos',payload);
+    await sbPatch('apontamentos_producao',id,{consolidado_em:new Date().toISOString()});
+    toast('✓ '+lancs.length+' insumos consolidados no job!','ok');
+    await load();go('apont');
+  }catch(e){toast('Erro: '+e.message,'err');}
 }
 
 /* ═══════════ VIEW: FORM (Nova / Editar) ═══════════ */
@@ -990,6 +1103,15 @@ document.addEventListener('click',function(e){
   }
   else if(a==='tram'){e.stopPropagation();abrirTram(el.dataset.id,el.dataset.st);}
   else if(a==='print'){e.stopPropagation();printOS(el.dataset.id);}
+  else if(a==='ap-criar'){criarApontamento();}
+  else if(a==='ap-encerrar'){encerrarApontamento(el.dataset.id);}
+  else if(a==='ap-consolidar'){consolidarApontamento(el.dataset.id,el.dataset.job,el.dataset.disc);}
+  else if(a==='ap-link'){window.open(AP_URL+'?token='+el.dataset.tok,'_blank');}
+  else if(a==='ap-copiar'){
+    var link=window._apLink||document.getElementById('ap-link-url').textContent;
+    if(navigator.clipboard)navigator.clipboard.writeText(link).then(function(){toast('Link copiado!','ok');});
+    else toast('Copie manualmente o link.','');
+  }
   else if(a==='tram-conf'){confirmarTram();}
   else if(a==='tram-fechar'){fecharTram();}
   else if(a==='hist'){e.stopPropagation();verHist(el.dataset.id);}
