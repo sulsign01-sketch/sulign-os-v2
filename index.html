@@ -612,7 +612,7 @@ function vJob(key){
     h+='<td>'+tagStatus(o)+'</td>';
     h+='<td class="num">'+fmt(o.data_entrega_prometida||o.prazo)+'</td>';
     h+='<td class="num"><div class="bar-wrap"><div class="bar'+barCls(o)+'" style="width:'+Math.max(p,3)+'%"></div></div><span class="mini">'+p+'%</span></td>';
-    h+='<td class="num">'+(prox?'<button class="btn btn-p btn-sm" data-action="tram" data-id="'+o.id+'" data-st="'+esc(prox)+'">→</button>':'')+'</td></tr>';
+    h+='<td class="num" style="white-space:nowrap"><button class="btn btn-g btn-sm" data-action="print" data-id="'+o.id+'">🖨</button>'+(prox?' <button class="btn btn-p btn-sm" data-action="tram" data-id="'+o.id+'" data-st="'+esc(prox)+'">→</button>':'')+'</td></tr>';
   }
   h+='</tbody></table></div>';
   return h;
@@ -643,7 +643,7 @@ function vLista(){
     h+='<td>'+tagStatus(o)+'</td>';
     h+='<td class="num hide-m mini">'+fmt(o.data_entrada)+'</td>';
     h+='<td class="num'+(atrasada(o)?'" style="color:var(--danger);font-weight:700':'')+'">'+fmt(o.data_entrega_prometida||o.prazo)+'</td>';
-    h+='<td class="num"><button class="btn btn-g btn-sm" data-action="hist" data-id="'+o.id+'">🕘</button></td></tr>';
+    h+='<td class="num" style="white-space:nowrap"><button class="btn btn-g btn-sm" data-action="print" data-id="'+o.id+'">🖨</button> <button class="btn btn-g btn-sm" data-action="hist" data-id="'+o.id+'">🕘</button></td></tr>';
   }
   h+='</tbody></table></div>';
   return h;
@@ -717,6 +717,7 @@ function vForm(){
   h+='</div><button class="btn btn-g btn-sm" data-action="add-item">+ Adicionar item</button></div>';
 
   h+='<div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">';
+  if(!novo)h+='<button class="btn btn-g" data-action="print" data-id="'+os.id+'">🖨 Imprimir</button>';
   if(!novo)h+='<button class="btn btn-g" style="color:var(--danger);border-color:var(--danger)" data-action="del" data-id="'+os.id+'">Excluir</button>';
   h+='<button class="btn btn-g" data-action="go" data-view="lista">Cancelar</button>';
   h+='<button class="btn btn-p" id="btn-salvar" data-action="salvar">💾 Salvar OS</button>';
@@ -745,9 +746,11 @@ function itemRow(it,i){
 }
 function coletarItens(){
   var its=[];
-  document.querySelectorAll('#f-itens .item-card').forEach(function(c){
+  var prev=(osEd&&osEd.itens)?osEd.itens:[];
+  document.querySelectorAll('#f-itens .item-card').forEach(function(c,idx){
     var it={};
     c.querySelectorAll('[data-if]').forEach(function(inp){it[inp.dataset.if]=inp.value;});
+    if(prev[idx]&&prev[idx].foto_base64)it.foto_base64=prev[idx].foto_base64;
     if(it.desc||it.qtd||it.verba||it.target||it.fechado)its.push(it);
   });
   return its;
@@ -797,6 +800,84 @@ function lerImg(file){
     if(z){z.className='paste-zone has';z.innerHTML='<img src="'+printBase64+'">';}
   };
   rd.readAsDataURL(file);
+}
+
+/* ═══════════ IMPRESSÃO DA OS ═══════════ */
+function printOS(id){
+  var os=osList.find(function(o){return String(o.id)===String(id);});
+  if(!os)return;
+  var d=DISCS[os.disciplina]||{l:os.disciplina,steps:[]};
+  var si=d.steps.indexOf(os.status);
+  var its=os.itens||[];
+  var win=window.open('','_blank','width=900,height=1000');
+  if(!win){toast('Pop-up bloqueado — libere para imprimir.','err');return;}
+  var stH=d.steps.map(function(s,i){
+    var c=i<si?'done':i===si?'curr':'';
+    return '<span class="st '+c+'">'+esc(s)+'</span>'+(i<d.steps.length-1?'<span class="sa">→</span>':'');
+  }).join('');
+  var itH=its.map(function(it,i){
+    var sep=it.desc&&(String(it.desc).indexOf('──')>=0||String(it.desc).indexOf('--')===0);
+    if(sep)return '<tr style="background:#FFEDE4"><td colspan="6" style="padding:5px 8px;font-weight:700;color:#FF5A1F;font-size:10px;">'+esc(it.desc)+'</td></tr>';
+    return '<tr><td style="font-family:Archivo,sans-serif;font-size:9px;color:#FF5A1F;font-weight:800;width:28px;padding:5px 8px;">'+String(i+1).padStart(2,'0')+'</td>'
+      +'<td style="padding:5px 8px;">'+esc(it.desc||'')+(it.foto_base64?'<br><img src="'+it.foto_base64+'" style="max-width:140px;max-height:90px;border:1px solid #E4E2DC;border-radius:3px;margin-top:4px;">':'')+'</td>'
+      +'<td style="padding:5px 8px;font-size:10px;width:90px;">'+esc(it.dim||'—')+'</td>'
+      +'<td style="padding:5px 8px;font-size:10px;width:70px;">'+esc(it.qtd||'—')+'</td>'
+      +'<td style="padding:5px 8px;width:110px;">'+esc(it.material||'—')+'</td>'
+      +'<td style="padding:5px 8px;width:110px;color:#6B6E76;">'+esc(it.acabamento||'—')+'</td></tr>';
+  }).join('');
+  var gab='';
+  if(os.disciplina==='ROUTER'||os.disciplina==='LASER')gab='<span style="font-weight:800;color:'+(os.gabarito==='nao'?'#D23B2F':'#1E9E5A')+';">'+(os.gabarito==='nao'?'SEM GABARITO':'COM GABARITO')+'</span>';
+  win.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>OS '+esc(os.num)+'</title>'
+    +'<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">'
+    +'<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Inter,sans-serif;font-size:12px;color:#1A1C22;background:white}'
+    +'.hdr{background:#1A1C22;padding:14px 24px;display:flex;justify-content:space-between;align-items:flex-start}'
+    +'.hn{font-family:Archivo,sans-serif;font-size:20px;font-weight:800;color:#fff;letter-spacing:.3px}'
+    +'.hd2{font-size:9px;color:#8B8E97;line-height:1.8;text-align:right}'
+    +'.hd2 b{color:#FF5A1F;font-size:11px;font-family:Archivo,sans-serif}'
+    +'.gbar{height:3px;background:#FF5A1F}'
+    +'.disc{display:inline-block;padding:2px 9px;border-radius:20px;font-size:9px;font-weight:800;letter-spacing:1px;text-transform:uppercase;border:1px solid #FF5A1F;color:#FF5A1F;background:#FFEDE4;margin-top:5px}'
+    +'.igrid{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid #E4E2DC;border-radius:6px;overflow:hidden;margin:14px 24px 0}'
+    +'.ic{padding:7px 12px;border-right:1px solid #E4E2DC;border-bottom:1px solid #E4E2DC}'
+    +'.ic:nth-child(4n){border-right:none}'
+    +'.il{font-size:8px;letter-spacing:1px;text-transform:uppercase;color:#6B6E76;font-weight:600;margin-bottom:1px}'
+    +'.iv{font-size:11px;font-weight:600}'
+    +'.tram{display:flex;flex-wrap:wrap;padding:10px 24px;gap:0;align-items:center}'
+    +'.st{padding:4px 11px;border:1px solid #E4E2DC;font-size:9px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#6B6E76;border-radius:3px}'
+    +'.st.done{background:#1E9E5A;color:white;border-color:#1E9E5A}'
+    +'.st.curr{background:#FF5A1F;border-color:#FF5A1F;color:#fff}'
+    +'.sa{color:#ccc;padding:0 3px;font-size:10px}'
+    +'.itbl{width:100%;border-collapse:collapse;margin:0 0 14px;font-size:11px}'
+    +'thead tr{background:#1A1C22}th{color:white;padding:6px 8px;text-align:left;font-size:8px;letter-spacing:1px;text-transform:uppercase}'
+    +'td{border-bottom:1px solid #EFEEE9;vertical-align:top}'
+    +'.obs{background:#F5F4F0;border-left:3px solid #FF5A1F;padding:7px 12px;font-size:11px;color:#5a5a5a;margin:0 24px 14px;border-radius:3px}'
+    +'.srow{display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px;padding:0 24px 16px;margin-top:16px}'
+    +'.si{border-top:1.5px solid #1A1C22;padding-top:4px;font-size:9px;color:#6B6E76;margin-top:32px}'
+    +'@media print{button{display:none!important}@page{margin:8mm 6mm}}</style></head><body>'
+    +'<div class="hdr"><div><div class="hn">'+esc(os.num)+'</div><div class="disc">'+esc(d.l)+'</div>'+(gab?'<div style="margin-top:4px;">'+gab+'</div>':'')+'</div>'
+    +'<div class="hd2"><b>Sul Sign Group</b><br>CNPJ 03.952.317/0001-16<br>'+new Date().toLocaleDateString('pt-BR')+'</div></div>'
+    +'<div class="gbar"></div>'
+    +'<div class="igrid">'
+    +'<div class="ic"><div class="il">Cliente</div><div class="iv">'+esc(os.cliente||'')+'</div></div>'
+    +'<div class="ic"><div class="il">Projeto</div><div class="iv">'+esc(os.projeto||'—')+'</div></div>'
+    +'<div class="ic"><div class="il">Dimensões</div><div class="iv">'+esc(os.dimensoes||'—')+'</div></div>'
+    +'<div class="ic"><div class="il">Prazo</div><div class="iv">'+fmtFull(os.prazo)+'</div></div>'
+    +'<div class="ic"><div class="il">Responsável</div><div class="iv">'+esc(os.responsavel||'—')+'</div></div>'
+    +'<div class="ic"><div class="il">Operador</div><div class="iv">'+esc(os.operador||'—')+'</div></div>'
+    +'<div class="ic"><div class="il">Entrega prometida</div><div class="iv">'+fmtFull(os.data_entrega_prometida)+'</div></div>'
+    +'<div class="ic"><div class="il">Entrada</div><div class="iv">'+fmtFull(os.data_entrada)+'</div></div>'
+    +(os.acabamento?'<div class="ic" style="grid-column:span 2"><div class="il">Acabamento</div><div class="iv">'+esc(os.acabamento)+(os.acabamento_cor?' — '+esc(os.acabamento_cor):'')+'</div></div>':'')
+    +(os.logistica?'<div class="ic" style="grid-column:span 2"><div class="il">Logística</div><div class="iv">'+esc(os.logistica)+'</div></div>':'')
+    +'</div>'
+    +'<div class="tram">'+stH+'</div>'
+    +'<div style="padding:0 24px 0"><table class="itbl"><thead><tr><th style="width:28px;">#</th><th>Descrição</th><th style="width:90px;">Dimensões</th><th style="width:70px;">Qtd</th><th style="width:110px;">Material</th><th style="width:110px;">Acabamento</th></tr></thead><tbody>'
+    +itH+'</tbody></table></div>'
+    +(os.print_base64?'<div style="padding:0 24px 14px;"><div style="font-size:8px;letter-spacing:1px;text-transform:uppercase;color:#6B6E76;font-weight:600;margin-bottom:5px;">Imagem de Referência</div><img src="'+os.print_base64+'" style="max-width:100%;max-height:280px;border:1px solid #E4E2DC;border-radius:6px;"></div>':'')
+    +(os.observacoes?'<div class="obs">'+esc(os.observacoes)+'</div>':'')
+    +'<div class="srow"><div class="si">Responsável pela execução</div><div class="si">Conferência / Qualidade</div><div class="si">Retirada / Entrega</div></div>'
+    +'<div style="text-align:center;padding:12px;"><button onclick="window.print()" style="padding:8px 24px;background:#FF5A1F;color:white;border:none;border-radius:8px;cursor:pointer;font-family:Inter,sans-serif;font-weight:600;font-size:12px;">🖨 Imprimir</button></div>'
+    +'</body></html>');
+  win.document.close();
+  setTimeout(function(){win.focus();},400);
 }
 
 /* ═══════════ TRAMITAÇÃO ═══════════ */
@@ -908,6 +989,7 @@ document.addEventListener('click',function(e){
     }
   }
   else if(a==='tram'){e.stopPropagation();abrirTram(el.dataset.id,el.dataset.st);}
+  else if(a==='print'){e.stopPropagation();printOS(el.dataset.id);}
   else if(a==='tram-conf'){confirmarTram();}
   else if(a==='tram-fechar'){fecharTram();}
   else if(a==='hist'){e.stopPropagation();verHist(el.dataset.id);}
